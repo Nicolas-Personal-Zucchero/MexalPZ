@@ -8,6 +8,7 @@ from datetime import datetime
 
 class MexalPZ:
     _BASE_URL = "https://services.passepartout.cloud/webapi/risorse"
+    _TIMEOUT_SECONDS = 20
 
     def __init__(self, domain: str, username: str, password: str, company: str, company_year: str, logger: Logger = None) -> None:
         self.logger = logger
@@ -29,7 +30,7 @@ class MexalPZ:
     ##########Pubblici##########
 
     def get_all_categories(self) -> Optional[Dict[str, str]]:
-        response = requests.get(self._BASE_URL + "/dati-generali/categorie-statistiche-cli-for", headers=self._headers, timeout=10)
+        response = requests.get(self._BASE_URL + "/dati-generali/categorie-statistiche-cli-for", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching categories: {response.status_code} - {response.text}")
             return None
@@ -38,7 +39,7 @@ class MexalPZ:
         return {str(cat['id']): cat['descrizione'] for cat in data["dati"]}
 
     def get_all_customers_field(self) -> Optional[List[Dict[str, str]]]:
-        response = requests.get(self._BASE_URL + "/clienti?info=true", headers=self._headers, timeout=10)
+        response = requests.get(self._BASE_URL + "/clienti?info=true", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching customers fields: {response.status_code} - {response.text}")
             return None
@@ -60,7 +61,7 @@ class MexalPZ:
         if props:
             endpoint += f"?fields={','.join(props)}"
 
-        response = requests.get(endpoint, headers=self._headers, timeout=10)
+        response = requests.get(endpoint, headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching customers: {response.status_code} - {response.text}")
             return None
@@ -82,7 +83,7 @@ class MexalPZ:
         endpoint = f"{self._BASE_URL}/referenti/clienti/"
         if properties:
             endpoint += f"?fields={','.join(properties)}"
-        response = requests.get(endpoint, headers=self._headers, timeout=10)
+        response = requests.get(endpoint, headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching referees: {response.status_code} - {response.text}")
             return None
@@ -95,7 +96,7 @@ class MexalPZ:
         if properties:
             endpoint += f"?fields={','.join(properties)}"
 
-        response = requests.get(endpoint, headers=self._headers, timeout=10)
+        response = requests.get(endpoint, headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching customer {mexal_code}: {response.status_code} - {response.text}")
             return None
@@ -122,7 +123,7 @@ class MexalPZ:
         modified_headers = self._headers.copy()
         modified_headers["Coordinate-Gestionale"] = modified_headers["Coordinate-Gestionale"].split("Anno=")[0] + "Anno=" + year
 
-        response = requests.get(endpoint, headers=modified_headers, timeout=10)
+        response = requests.get(endpoint, headers=modified_headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching warehouse movements for year {year}: {response.status_code} - {response.text}")
             return None
