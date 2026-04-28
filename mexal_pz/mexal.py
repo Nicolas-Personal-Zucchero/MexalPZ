@@ -1,10 +1,10 @@
 #pip install .
-from typing import Optional, Dict, List
+from typing import Any, Optional
 import requests
 import base64
-import logging
 from logging import Logger
 from datetime import datetime
+import re
 
 class MexalPZ:
     _BASE_URL = "https://services.passepartout.cloud/webapi/risorse"
@@ -27,9 +27,66 @@ class MexalPZ:
         if self.logger is not None:
             self.logger.error(msg)
 
+    def _get_mydb(self, app_name: str, mydb_name: str, id: Optional[str] = None) -> Optional[Any]:
+        base_endpoint = f"{self._BASE_URL}/mydb/{app_name}@{mydb_name}"
+
+        if id:
+            url = f"{base_endpoint}/{id}"
+            response = requests.get(url, headers=self._headers, timeout=self._TIMEOUT_SECONDS)
+            return response.json() if response.status_code == 200 else None
+
+        all_records = []
+        next_token = None
+
+        while True:
+            params = {}
+            if next_token:
+                params['next'] = next_token
+
+            response = requests.get(
+                base_endpoint, 
+                headers=self._headers, 
+                params=params, 
+                timeout=self._TIMEOUT_SECONDS
+            )
+
+            if response.status_code != 200:
+                self._log_error(f"Error fetching mydb: {response.status_code} - {response.text}")
+                return None
+
+            data = response.json()
+            all_records.extend(data.get('dati', []))
+
+            next_token = data.get('next')
+            if not next_token:
+                break
+
+        return all_records
+    
+    def _find_mydb(self, app_name: str, mydb_name: str, filters: list[tuple[str, str, Any]]) -> Optional[Any]:
+        endpoint = self._BASE_URL + f"/mydb/{app_name}@{mydb_name}/ricerca"
+
+        filters = {
+            "filtri": [
+                {
+                    "campo": campo,
+                    "condizione": condizione,
+                    "valore": valore
+                } for campo, condizione, valore in filters
+            ]
+        }
+
+        response = requests.post(endpoint, headers=self._headers, json=filters, timeout=self._TIMEOUT_SECONDS)
+        if response.status_code != 200:
+            self._log_error(f"Error searching mydb records: {response.status_code} - {response.text}")
+            return None
+
+        data = response.json()
+        return data
+
     ##########Pubblici##########
 
-    def get_all_categories(self) -> Optional[Dict[str, str]]:
+    def get_all_categories(self) -> Optional[dict[str, str]]:
         response = requests.get(self._BASE_URL + "/dati-generali/categorie-statistiche-cli-for", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching categories: {response.status_code} - {response.text}")
@@ -38,7 +95,7 @@ class MexalPZ:
         data = response.json()
         return {str(cat['id']): cat['descrizione'] for cat in data["dati"]}
 
-    def get_all_customers_field(self) -> Optional[List[Dict[str, str]]]:
+    def get_all_customers_field(self) -> Optional[list[dict[str, str]]]:
         response = requests.get(self._BASE_URL + "/clienti?info=true", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching customers fields: {response.status_code} - {response.text}")
@@ -47,7 +104,7 @@ class MexalPZ:
         data = response.json()
         return data["dati"]
 
-    def get_all_customers(self, properties: Optional[List[str]] = None, include_predeleted: bool = False) -> Optional[List[Dict[str, str]]]:
+    def get_all_customers(self, properties: Optional[list[str]] = None, include_predeleted: bool = False) -> Optional[list[dict[str, str]]]:
         endpoint = self._BASE_URL + "/clienti"
 
         props = list(properties) if properties else []
@@ -79,7 +136,7 @@ class MexalPZ:
 
         return customers
     
-    def get_all_referees(self, properties: Optional[List[str]] = None) -> Optional[List[Dict[str, str]]]:
+    def get_all_referees(self, properties: Optional[list[str]] = None) -> Optional[list[dict[str, str]]]:
         endpoint = f"{self._BASE_URL}/referenti/clienti/"
         if properties:
             endpoint += f"?fields={','.join(properties)}"
@@ -91,7 +148,7 @@ class MexalPZ:
         data = response.json()
         return [{k: str(v) for k, v in d.items()} for d in data["dati"]]
 
-    def get_customer_by_mexal_code(self, mexal_code: str, properties: Optional[List[str]] = None) -> Optional[Dict[str, str]]:
+    def get_customer_by_mexal_code(self, mexal_code: str, properties: Optional[list[str]] = None) -> Optional[dict[str, str]]:
         endpoint = f"{self._BASE_URL}/clienti/{mexal_code}"
         if properties:
             endpoint += f"?fields={','.join(properties)}"
@@ -103,41 +160,47 @@ class MexalPZ:
         
         data = response.json()
         return {k: str(v) for k, v in data.items()}
-    
-    def get_warehouse_movements(self, year: str, properties: Optional[List[str]] = None, next: Optional[str] = None) -> Optional[List[Dict[str, str]]]:
-        endpoint = f"{self._BASE_URL}/documenti/movimenti-magazzino"
 
-        if properties:
-            if "?" in endpoint:
-                endpoint += f"&fields={','.join(properties)}"
-            else:
-                endpoint += f"?fields={','.join(properties)}"
+    def get_warehouse_movements(self, year: str, properties: Optional[list[str]] = None, next_page: Optional[str] = None) -> Optional[list[dict[str, str]]]:
+        base_endpoint = f"{self._BASE_URL}/documenti/movimenti-magazzino"
 
-        if next:
-            if "?" in endpoint:
-                endpoint += f"&next={next}"
-            else:
-                endpoint += f"?next={next}"
-
-        #Remove the last 4 digit (original company year) and replace with the year parameter
         modified_headers = self._headers.copy()
-        modified_headers["Coordinate-Gestionale"] = modified_headers["Coordinate-Gestionale"].split("Anno=")[0] + "Anno=" + year
+        header_coord = modified_headers.get("Coordinate-Gestionale", "")
+        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
 
-        response = requests.get(endpoint, headers=modified_headers, timeout=self._TIMEOUT_SECONDS)
-        if response.status_code != 200:
-            self._log_error(f"Error fetching warehouse movements for year {year}: {response.status_code} - {response.text}")
-            return None
-        
-        data = response.json()
-        movements = [{k: str(v) for k, v in d.items()} for d in data["dati"]]
-        if "next" in data:
-            next_movements = self.get_warehouse_movements(year, properties, data["next"])
-            if next_movements:
-                movements.extend(next_movements)
+        all_movements = []
+        current_next = next_page
 
-        return movements
+        while True:
+            params = {}
+            if properties:
+                params["fields"] = ",".join(properties)
+            if current_next:
+                params["next"] = current_next
+
+            response = requests.get(
+                base_endpoint, 
+                headers=modified_headers, 
+                params=params, 
+                timeout=self._TIMEOUT_SECONDS
+            )
+            
+            if response.status_code != 200:
+                self._log_error(f"Error fetching warehouse movements for year {year}: {response.status_code} - {response.text}")
+                return None
+            
+            data = response.json()
+
+            movements = [{k: str(v) for k, v in d.items()} for d in data.get("dati", [])]
+            all_movements.extend(movements)
+
+            current_next = data.get("next")
+            if not current_next:
+                break
+
+        return all_movements
     
-    def get_all_warehouse_movements(self, properties: Optional[List[str]] = None) -> Optional[List[Dict[str, str]]]:
+    def get_all_warehouse_movements(self, properties: Optional[list[str]] = None) -> Optional[list[dict[str, str]]]:
         movements = []
         current_year = datetime.now().year
         for year in range(2019, current_year + 1):
@@ -147,29 +210,55 @@ class MexalPZ:
 
         return movements if movements else None
     
-    def get_last_delivery_dates(self) -> Optional[Dict[str, str]]:
-        movements = self.get_all_warehouse_movements(properties=["sigla", "sigla_doc_orig", "data_doc_orig", "cod_conto", "data_documento"])
+    def get_last_delivery_dates(self) -> Optional[dict[str, str]]:
+        movements = self.get_all_warehouse_movements(
+            properties=["sigla", "sigla_doc_orig", "data_doc_orig", "cod_conto", "data_documento"]
+        )
         mov_dict = {}
         for m in movements:
-            codice_mexal = m.get("cod_conto", "")
-
-            delivery_date = ""
-            if m["sigla"] == "FT":
-                if m["sigla_doc_orig"] == "FT": #Fattura accompagnatoria
-                    delivery_date = m["data_documento"]
-                elif m["sigla_doc_orig"] == "BC": #Fattura da bolla
-                    delivery_date = m["data_doc_orig"]
-            elif m["sigla"] == "BC": #Bolla non ancora consegnata
-                delivery_date = m["data_documento"]
-            elif m["sigla"] == "BS": #Bolla di scarico dopo aver emesso la fattura
-                    delivery_date = m["data_documento"]
-
-            if codice_mexal == "" or delivery_date == "":
+            codice_mexal = m.get("cod_conto")
+            if not codice_mexal:
                 continue
 
-            if codice_mexal not in mov_dict:
+            sigla = m.get("sigla", "")
+            sigla_doc_orig = m.get("sigla_doc_orig", "")
+
+            delivery_date = None
+            if sigla == "FT":
+                if sigla_doc_orig == "FT": #Fattura accompagnatoria
+                    delivery_date = m["data_documento"]
+                elif sigla_doc_orig == "BC": #Fattura da bolla
+                    delivery_date = m["data_doc_orig"]
+            elif sigla == "BC": #Bolla non ancora consegnata
+                delivery_date = m["data_documento"]
+            elif sigla == "BS": #Bolla di scarico dopo aver emesso la fattura
+                delivery_date = m["data_documento"]
+
+            if not delivery_date:
+                continue
+
+            current_max = mov_dict.get(codice_mexal)
+            if not current_max or delivery_date > current_max:
                 mov_dict[codice_mexal] = delivery_date
-            else:
-                mov_dict[codice_mexal] = max(delivery_date, mov_dict[codice_mexal])
         
         return mov_dict if mov_dict else None
+
+    # Mydb
+
+    def get_note_indirizzi_spedizione(self, id: Optional[str] = None) -> Optional[dict[str, str]]:
+        '''
+        Recupera le note sugli indirizzi di spedizione dalla mydb "noteind". Se viene passato un id, recupera solo la nota con quell'id, altrimenti recupera tutte le note.
+        '''
+        return self._get_mydb("430569NOTE", "noteind", id)
+    
+    def get_note_consegna(self, id: Optional[str] = None) -> Optional[dict[str, str]]:
+        '''
+        Recupera le note sulla consegna dalla mydb "notecons". Se viene passato un id, recupera solo la nota con quell'id, altrimenti recupera tutte le note.
+        '''
+        return self._get_mydb("430569PERSONAL", "notecons", id)
+    
+    def find_note_indirizzi_spedizione(self, filters: list[tuple[str, str, str]]) -> Optional[Any]:
+        return self._find_mydb("430569NOTE", "noteind", filters)
+
+    def find_note_consegna(self, filters: list[tuple[str, str, str]]) -> Optional[Any]:
+        return self._find_mydb("430569PERSONAL", "notecons", filters)
