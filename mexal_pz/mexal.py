@@ -63,7 +63,7 @@ class MexalPZ:
 
         return all_records
     
-    def _find_mydb(self, app_name: str, mydb_name: str, filters: list[tuple[str, str, Any]]) -> Optional[Any]:
+    def _find_mydb(self, app_name: str, mydb_name: str, filters: list[tuple[str, str, Any]] = []) -> Optional[Any]:
         endpoint = self._BASE_URL + f"/mydb/{app_name}@{mydb_name}/ricerca"
 
         filters = {
@@ -99,6 +99,15 @@ class MexalPZ:
         response = requests.get(self._BASE_URL + "/clienti?info=true", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
             self._log_error(f"Error fetching customers fields: {response.status_code} - {response.text}")
+            return None
+        
+        data = response.json()
+        return data["dati"]
+
+    def get_all_warehouse_movements_field(self) -> Optional[list[dict[str, str]]]:
+        response = requests.get(self._BASE_URL + "/documenti/movimenti-magazzino?info=true", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
+        if response.status_code != 200:
+            self._log_error(f"Error fetching warehouse movements fields: {response.status_code} - {response.text}")
             return None
         
         data = response.json()
@@ -161,7 +170,7 @@ class MexalPZ:
         data = response.json()
         return {k: str(v) for k, v in data.items()}
 
-    def get_warehouse_movements(self, year: str, properties: Optional[list[str]] = None, next_page: Optional[str] = None) -> Optional[list[dict[str, str]]]:
+    def get_warehouse_movements(self, year: str, properties: Optional[list[str]] = None) -> Optional[list[dict[str, str]]]:
         base_endpoint = f"{self._BASE_URL}/documenti/movimenti-magazzino"
 
         modified_headers = self._headers.copy()
@@ -169,14 +178,14 @@ class MexalPZ:
         modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
 
         all_movements = []
-        current_next = next_page
+        next = None
 
         while True:
             params = {}
             if properties:
                 params["fields"] = ",".join(properties)
-            if current_next:
-                params["next"] = current_next
+            if next:
+                params["next"] = next
 
             response = requests.get(
                 base_endpoint, 
@@ -194,12 +203,62 @@ class MexalPZ:
             movements = [{k: str(v) for k, v in d.items()} for d in data.get("dati", [])]
             all_movements.extend(movements)
 
-            current_next = data.get("next")
-            if not current_next:
+            next = data.get("next")
+            if not next:
                 break
 
         return all_movements
     
+    def find_warehouse_movements(self, year: str, properties: list[str] = [], filters: list[tuple[str, str, Any]] = []) -> Optional[list[dict[str, str]]]:
+        base_endpoint = f"{self._BASE_URL}/documenti/movimenti-magazzino/ricerca"
+
+        modified_headers = self._headers.copy()
+        header_coord = modified_headers.get("Coordinate-Gestionale", "")
+        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
+
+        all_movements = []
+        next = None
+
+        filters = {
+            "filtri": [
+                {
+                    "campo": campo,
+                    "condizione": condizione,
+                    "valore": valore
+                } for campo, condizione, valore in filters
+            ]
+        }
+
+        while True:
+            params = {}
+            if properties:
+                params["fields"] = ",".join(properties)
+            if next:
+                params["next"] = next
+
+            response = requests.post(
+                base_endpoint, 
+                headers=modified_headers, 
+                params=params,
+                json=filters,
+                timeout=self._TIMEOUT_SECONDS
+            )
+            
+            if response.status_code != 200:
+                self._log_error(f"Error fetching warehouse movements for year {year}: {response.status_code} - {response.text}")
+                return None
+            
+            data = response.json()
+
+            movements = [{k: str(v) for k, v in d.items()} for d in data.get("dati", [])]
+            all_movements.extend(movements)
+
+            next = data.get("next")
+            if not next:
+                break
+
+        return all_movements
+
     def get_all_warehouse_movements(self, properties: Optional[list[str]] = None) -> Optional[list[dict[str, str]]]:
         movements = []
         current_year = datetime.now().year
@@ -257,8 +316,8 @@ class MexalPZ:
         '''
         return self._get_mydb("430569PERSONAL", "notecons", id)
     
-    def find_note_indirizzi_spedizione(self, filters: list[tuple[str, str, str]]) -> Optional[Any]:
+    def find_note_indirizzi_spedizione(self, filters: list[tuple[str, str, str]] = []) -> Optional[Any]:
         return self._find_mydb("430569NOTE", "noteind", filters)
 
-    def find_note_consegna(self, filters: list[tuple[str, str, str]]) -> Optional[Any]:
+    def find_note_consegna(self, filters: list[tuple[str, str, str]] = []) -> Optional[Any]:
         return self._find_mydb("430569PERSONAL", "notecons", filters)
