@@ -95,6 +95,15 @@ class MexalPZ:
         data = response.json()
         return {str(cat['id']): cat['descrizione'] for cat in data["dati"]}
 
+    def get_all_aspetti_esteriori_beni(self) -> Optional[dict[str, str]]:
+        response = requests.get(self._BASE_URL + "/dati-generali/aspetto-esteriore-beni", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
+        if response.status_code != 200:
+            self._log_error(f"Error fetching exterioraspects: {response.status_code} - {response.text}")
+            return None
+        
+        data = response.json()
+        return {str(cat['codice']): cat['descrizione'] for cat in data["dati"]}
+
     def get_all_customers_field(self) -> Optional[list[dict[str, str]]]:
         response = requests.get(self._BASE_URL + "/clienti?info=true", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
         if response.status_code != 200:
