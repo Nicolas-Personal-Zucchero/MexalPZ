@@ -63,13 +63,14 @@ class MexalPZ:
 
         return all_records
     
-    '''
-    Inizialmente era una ricerca con filtri, ma siccome la ricerca è strana su mydb, e non mi servono filtri diversi dall'id, ho forzato la ricerca.
-    Nel caso di note indirizzi spedizioni, inserirò l'id
-    Nel caso di note consegna, inserirò il codice mexal del cliente.
-    '''
-    def _find_mydb(self, app_name: str, mydb_name: str, id: str) -> Optional[Any]:
-        endpoint = self._BASE_URL + f"/mydb/{app_name}@{mydb_name}/ricerca"
+    def _find_mydb(self, app_name: str, mydb_name: str, record_id: str) -> Optional[dict[str, Any]]:
+        """
+        Inizialmente era una ricerca con filtri, ma siccome la ricerca è strana su mydb, 
+        e non mi servono filtri diversi dall'id, ho forzato la ricerca.
+        Nel caso di note indirizzi spedizioni, inserirò l'id
+        Nel caso di note consegna, inserirò il codice mexal del cliente.
+        """
+        endpoint = f"{self._BASE_URL}/mydb/{app_name}@{mydb_name}/ricerca"
 
         filters = {
             "filtri": [
@@ -77,18 +78,33 @@ class MexalPZ:
                     "campo": "dati_campi",
                     "indice1": 1,
                     "condizione": "=",
-                    "valore": id
+                    "valore": record_id
                 }
             ]
         }
 
-        response = requests.post(endpoint, headers=self._headers, json=filters, timeout=self._TIMEOUT_SECONDS)
-        if response.status_code != 200:
-            self._log_error(f"Error searching mydb records: {response.status_code} - {response.text}")
+        try:
+            response = requests.post(endpoint, headers=self._headers, json=filters, timeout=self._TIMEOUT_SECONDS)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            self._log_error(f"Errore nella ricerca record mydb ({app_name}@{mydb_name}): {str(e)}")
             return None
 
         data = response.json()
-        return data
+        results = data.get("dati", [])
+        
+        if not results:
+            return None
+        
+        result = results[0]
+        # Mapping dei valori prevendendo l'assenza della chiave
+        valori = {str(item[0]): item[1] for item in result.get('dati_campi', [])}
+
+        output = {'id': result.get('id')}
+        for id_campo, _ in result.get('etichette_campi', []):
+            output[str(id_campo)] = valori.get(str(id_campo))
+
+        return output
 
     ##########Pubblici##########
 
@@ -358,31 +374,8 @@ class MexalPZ:
         '''
         return self._get_mydb("430569PERSONAL", "notecons", id)
     
-    def get_note_indirizzi_spedizione_by_address_id(self, id: str) -> Optional[Any]:
-        results = self._find_mydb("430569NOTE", "noteind", id)["dati"]
-        if not results or len(results) == 0:
-            return None
-        
-        result = results[0]
-        valori = {item[0]: item[1] for item in result['dati_campi']}
+    def get_note_indirizzi_spedizione_by_address_id(self, address_id: str) -> Optional[dict[str, Any]]:
+        return self._find_mydb("430569NOTE", "noteind", address_id)
 
-        output = {'id': result['id']}
-        for id_campo, _ in result['etichette_campi']:
-            output[id_campo] = valori.get(id_campo, None)
-
-        return output
-
-    def get_note_consegna_by_customer_id(self, mexal_code: str) -> Optional[Any]:
-        results = self._find_mydb("430569PERSONAL", "notecons", mexal_code)["dati"]
-        if not results or len(results) == 0:
-            return None
-        
-        result = results[0]
-        valori = {item[0]: item[1] for item in result['dati_campi']}
-
-        output = {'id': result['id']}
-        for id_campo, _ in result['etichette_campi']:
-            output[id_campo] = valori.get(id_campo, None)
-
-        return output
-        
+    def get_note_consegna_by_customer_id(self, mexal_code: str) -> Optional[dict[str, Any]]:
+        return self._find_mydb("430569PERSONAL", "notecons", mexal_code)
