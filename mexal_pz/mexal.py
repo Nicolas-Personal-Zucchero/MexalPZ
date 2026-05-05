@@ -106,6 +106,57 @@ class MexalPZ:
 
         return output
 
+    def _get_resource(self, year: str, resource_name: str, resource_id: str, properties: Optional[list[str]] = None) -> Optional[dict[str, str]]:
+        modified_headers = self._headers.copy()
+        header_coord = modified_headers.get("Coordinate-Gestionale", "")
+        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
+
+        endpoint = f"{self._BASE_URL}/{resource_name}/{resource_id}"
+        params = {"fields": ",".join(properties)} if properties else {}
+
+        try:
+            response = requests.get(
+                endpoint,
+                headers=modified_headers,
+                params=params,
+                timeout=self._TIMEOUT_SECONDS
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {k: str(v) for k, v in data.items()}
+        except requests.exceptions.RequestException as e:
+            error_details = e.response.text if e.response is not None else str(e)
+            self._log_error(f"Network error fetching resource {resource_name} with ID {resource_id}: {error_details}")
+        except Exception as e:
+            self._log_error(f"Error fetching resource {resource_name} with ID {resource_id}: {str(e)}")
+
+        return None
+
+    def _update_resource(self, year: str, resource_name: str, resource_id: str, properties: dict[str, str]) -> bool:
+        modified_headers = self._headers.copy()
+        header_coord = modified_headers.get("Coordinate-Gestionale", "")
+        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
+
+        endpoint = f"{self._BASE_URL}/{resource_name}/{resource_id}"
+        # params = {"solo_testata": "true"}
+
+        try:
+            response = requests.put(
+                endpoint,
+                headers=modified_headers,
+                # params=params,
+                json=properties,
+                timeout=self._TIMEOUT_SECONDS
+            )
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException as e:
+            error_details = e.response.text if e.response is not None else str(e)
+            self._log_error(f"Network error updating resource {resource_name} with ID {resource_id}: {error_details}")
+        except Exception as e:
+            self._log_error(f"Error updating resource {resource_name} with ID {resource_id}: {str(e)}")
+        return False
+
     ##########Pubblici##########
 
     def get_all_categories(self) -> Optional[dict[str, str]]:
@@ -359,6 +410,12 @@ class MexalPZ:
             self._log_error(f"Validation error for address {code}: {str(e)}")
 
         return None
+
+    def update_warehouse_movement(self, year: str, movement_id: str, properties: dict[str, str]) -> bool:
+        return self._update_resource(year, "documenti/movimenti-magazzino", movement_id, properties)
+
+    def get_single_warehouse_movement(self, year: str, movement_id: str, properties: Optional[list[str]] = None) -> Optional[dict[str, str]]:
+        return self._get_resource(year, "documenti/movimenti-magazzino", movement_id, properties)
 
     # Mydb
 
