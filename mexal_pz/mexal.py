@@ -175,7 +175,7 @@ class MexalPZ:
         if response.status_code != 200:
             self._log_error(f"Error fetching customer {mexal_code}: {response.status_code} - {response.text}")
             return None
-        
+
         data = response.json()
         return {k: str(v) for k, v in data.items()}
 
@@ -310,6 +310,19 @@ class MexalPZ:
                 mov_dict[codice_mexal] = delivery_date
         
         return mov_dict if mov_dict else None
+
+    def get_indirizzo_di_spedizione(self, code: str, properties: Optional[list[str]] = None) -> Optional[dict[str, str]]:
+        endpoint = f"{self._BASE_URL}/indirizzi-spedizione/{code}"
+        if properties:
+            endpoint += f"?fields={','.join(properties)}"
+
+        response = requests.get(endpoint, headers=self._headers, timeout=self._TIMEOUT_SECONDS)
+        if response.status_code != 200:
+            self._log_error(f"Error fetching shipping address {code}: {response.status_code} - {response.text}")
+            return None
+
+        data = response.json()
+        return {k: str(v) for k, v in data.items()}
 
     # Mydb
 
