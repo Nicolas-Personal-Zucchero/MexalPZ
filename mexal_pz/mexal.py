@@ -311,18 +311,32 @@ class MexalPZ:
         
         return mov_dict if mov_dict else None
 
-    def get_indirizzo_di_spedizione(self, code: str, properties: Optional[list[str]] = None) -> Optional[dict[str, str]]:
+    def get_indirizzo_di_spedizione(
+            self,
+            code: str,
+            properties: Optional[list[str]] = ["cod_conto", "descrizione", "indirizzo", "cap", "localita", "provincia", "tp_nazionalita", "cod_paese"]
+        ) -> Optional[dict[str, str]]:
         endpoint = f"{self._BASE_URL}/indirizzi-spedizione/{code}"
-        if properties:
-            endpoint += f"?fields={','.join(properties)}"
 
-        response = requests.get(endpoint, headers=self._headers, timeout=self._TIMEOUT_SECONDS)
-        if response.status_code != 200:
-            self._log_error(f"Error fetching shipping address {code}: {response.status_code} - {response.text}")
-            return None
+        params = {"fields": ",".join(properties)} if properties else {}
 
-        data = response.json()
-        return {k: str(v) for k, v in data.items()}
+        try:
+            response = requests.get(
+                endpoint,
+                headers=self._headers,
+                params=params,
+                timeout=self._TIMEOUT_SECONDS
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {k: str(v) for k, v in data.items()}
+
+        except requests.exceptions.RequestException as e:
+            self._log_error(f"Network error fetching shipping address {code}: {str(e)}")
+        except Exception as e:
+            self._log_error(f"Validation error for address {code}: {str(e)}")
+
+        return None
 
     # Mydb
 
