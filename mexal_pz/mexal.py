@@ -63,16 +63,22 @@ class MexalPZ:
 
         return all_records
     
-    def _find_mydb(self, app_name: str, mydb_name: str, filters: list[tuple[str, str, Any]] = []) -> Optional[Any]:
+    '''
+    Inizialmente era una ricerca con filtri, ma siccome la ricerca è strana su mydb, e non mi servono filtri diversi dall'id, ho forzato la ricerca.
+    Nel caso di note indirizzi spedizioni, inserirò l'id
+    Nel caso di note consegna, inserirò il codice mexal del cliente.
+    '''
+    def _find_mydb(self, app_name: str, mydb_name: str, id: str) -> Optional[Any]:
         endpoint = self._BASE_URL + f"/mydb/{app_name}@{mydb_name}/ricerca"
 
         filters = {
             "filtri": [
                 {
-                    "campo": campo,
-                    "condizione": condizione,
-                    "valore": valore
-                } for campo, condizione, valore in filters
+                    "campo": "dati_campi",
+                    "indice1": 1,
+                    "condizione": "=",
+                    "valore": id
+                }
             ]
         }
 
@@ -352,8 +358,8 @@ class MexalPZ:
         '''
         return self._get_mydb("430569PERSONAL", "notecons", id)
     
-    def find_note_indirizzi_spedizione(self, filters: list[tuple[str, str, str]] = []) -> Optional[Any]:
-        return self._find_mydb("430569NOTE", "noteind", filters)
+    def get_note_indirizzi_spedizione_by_address_id(self, id: str) -> Optional[Any]:
+        return self._find_mydb("430569NOTE", "noteind", id)["dati"][0]
 
-    def find_note_consegna(self, filters: list[tuple[str, str, str]] = []) -> Optional[Any]:
-        return self._find_mydb("430569PERSONAL", "notecons", filters)
+    def get_note_consegna_by_customer_id(self, mexal_code: str) -> Optional[Any]:
+        return self._find_mydb("430569PERSONAL", "notecons", mexal_code)["dati"][0]
