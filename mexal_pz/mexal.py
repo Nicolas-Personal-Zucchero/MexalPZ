@@ -359,7 +359,30 @@ class MexalPZ:
         return self._get_mydb("430569PERSONAL", "notecons", id)
     
     def get_note_indirizzi_spedizione_by_address_id(self, id: str) -> Optional[Any]:
-        return self._find_mydb("430569NOTE", "noteind", id)["dati"][0]
+        results = self._find_mydb("430569NOTE", "noteind", id)["dati"]
+        if not results or len(results) == 0:
+            return None
+        
+        result = results[0]
+        valori = {item[0]: item[1] for item in result['dati_campi']}
+
+        output = {'id': result['id']}
+        for id_campo, _ in result['etichette_campi']:
+            output[id_campo] = valori.get(id_campo, None)
+
+        return output
 
     def get_note_consegna_by_customer_id(self, mexal_code: str) -> Optional[Any]:
-        return self._find_mydb("430569PERSONAL", "notecons", mexal_code)["dati"][0]
+        results = self._find_mydb("430569PERSONAL", "notecons", mexal_code)["dati"]
+        if not results or len(results) == 0:
+            return None
+        
+        result = results[0]
+        valori = {item[0]: item[1] for item in result['dati_campi']}
+
+        output = {'id': result['id']}
+        for id_campo, _ in result['etichette_campi']:
+            output[id_campo] = valori.get(id_campo, None)
+
+        return output
+        
