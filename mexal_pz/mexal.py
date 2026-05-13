@@ -471,3 +471,10 @@ class MexalPZ:
 
     def get_note_consegna_by_customer_id(self, mexal_code: str) -> Optional[dict[str, Any]]:
         return self._find_mydb("430569PERSONAL", "notecons", mexal_code)
+
+    def get_altre_note_gestionali_by_customer_id(self, mexal_code: str) -> Optional[dict[str, Any]]:
+        return self._find_mydb("430569PERSONAL", "notegest", mexal_code)
+
+    #Not working
+    def get_sscc_list_by_order_id(self, order_id: str) -> Optional[dict[str, Any]]:
+        return self._find_mydb("430569PERSONAL", "sscccode", order_id)
