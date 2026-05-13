@@ -23,6 +23,13 @@ class MexalPZ:
 
     ##########Privati##########
 
+    def _change_year_in_header(self, year: str) -> dict[str, str]:
+        modified_headers = self._headers.copy()
+        header_coord = modified_headers.get("Coordinate-Gestionale", "")
+        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
+
+        return modified_headers
+
     def _log_error(self, msg: str) -> None:
         if self.logger is not None:
             self.logger.error(msg)
@@ -107,9 +114,7 @@ class MexalPZ:
         return output
 
     def _get_resource(self, year: str, resource_name: str, resource_id: str, properties: Optional[list[str]] = None) -> Optional[dict[str, str]]:
-        modified_headers = self._headers.copy()
-        header_coord = modified_headers.get("Coordinate-Gestionale", "")
-        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
+        modified_headers = self._change_year_in_header(year)
 
         endpoint = f"{self._BASE_URL}/{resource_name}/{resource_id}"
         params = {"fields": ",".join(properties)} if properties else {}
@@ -123,7 +128,7 @@ class MexalPZ:
             )
             response.raise_for_status()
             data = response.json()
-            return {k: str(v) for k, v in data.items()}
+            return {k: v for k, v in data.items()}
         except requests.exceptions.RequestException as e:
             error_details = e.response.text if e.response is not None else str(e)
             self._log_error(f"Network error fetching resource {resource_name} with ID {resource_id}: {error_details}")
@@ -132,20 +137,16 @@ class MexalPZ:
 
         return None
 
-    def _update_resource(self, year: str, resource_name: str, resource_id: str, properties: dict[str, str]) -> bool:
-        modified_headers = self._headers.copy()
-        header_coord = modified_headers.get("Coordinate-Gestionale", "")
-        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
-
+    def _update_resource(self, year: str, resource_name: str, resource_id: str, payload: dict[str, Any], params: Optional[dict[str, str]] = None) -> bool:
+        modified_headers = self._change_year_in_header(year)
         endpoint = f"{self._BASE_URL}/{resource_name}/{resource_id}"
-        # params = {"solo_testata": "true"}
 
         try:
             response = requests.put(
                 endpoint,
                 headers=modified_headers,
-                # params=params,
-                json=properties,
+                params=params if params else {},
+                json=payload,
                 timeout=self._TIMEOUT_SECONDS
             )
             response.raise_for_status()
@@ -255,9 +256,7 @@ class MexalPZ:
     def get_warehouse_movements(self, year: str, properties: Optional[list[str]] = None) -> Optional[list[dict[str, str]]]:
         base_endpoint = f"{self._BASE_URL}/documenti/movimenti-magazzino"
 
-        modified_headers = self._headers.copy()
-        header_coord = modified_headers.get("Coordinate-Gestionale", "")
-        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
+        modified_headers = self._change_year_in_header(year)
 
         all_movements = []
         next = None
@@ -294,9 +293,7 @@ class MexalPZ:
     def find_warehouse_movements(self, year: str, properties: list[str] = [], filters: list[tuple[str, str, Any]] = []) -> Optional[list[dict[str, str]]]:
         base_endpoint = f"{self._BASE_URL}/documenti/movimenti-magazzino/ricerca"
 
-        modified_headers = self._headers.copy()
-        header_coord = modified_headers.get("Coordinate-Gestionale", "")
-        modified_headers["Coordinate-Gestionale"] = re.sub(r"Anno=\d{4}", f"Anno={year}", header_coord)
+        modified_headers = self._change_year_in_header(year)
 
         all_movements = []
         next = None
@@ -411,11 +408,49 @@ class MexalPZ:
 
         return None
 
-    def update_warehouse_movement(self, year: str, movement_id: str, properties: dict[str, str]) -> bool:
-        return self._update_resource(year, "documenti/movimenti-magazzino", movement_id, properties)
+    def update_warehouse_movement(
+            self,
+            year: str,
+            sigla: str,
+            serie: str,
+            numero: str,
+            cod_conto: str,
+            updates: dict[str, Any],
+            solo_testata: bool = True,
+        ) -> bool:
+        
+        # 1. Recupero stato attuale per inviare i campi obbligatori per la PUT
+        current_state = self.get_single_warehouse_movement(year, sigla, serie, numero, cod_conto)
+        if not current_state:
+            self._log_error(f"Fallito recupero movimento per update: {sigla}-{serie}-{numero}-{cod_conto}")
+            return False
 
-    def get_single_warehouse_movement(self, year: str, movement_id: str, properties: Optional[list[str]] = None) -> Optional[dict[str, str]]:
-        return self._get_resource(year, "documenti/movimenti-magazzino", movement_id, properties)
+        # 2. Estrazione chiavi obbligatorie per il corretto instradamento del PUT
+        mandatory_keys = [
+            "sigla_ordine", "serie_ordine", "numero_ordine",
+            "sigla_doc_orig", "serie_doc_orig", "numero_doc_orig",
+            "id_riga", "tp_riga", "id_rif_testata"
+        ]
+        
+        # 3. Payload composto da campi obbligatori + aggiornamenti
+        payload = {k: current_state.get(k) for k in mandatory_keys if k in current_state}
+        payload.update(updates)
+
+        params = {"solo_testata": "true"} if solo_testata else {}
+
+        resource_id = f"{sigla}+{serie}+{numero}+{cod_conto}"
+        return self._update_resource(year, "documenti/movimenti-magazzino", resource_id, payload, params)
+
+    def get_single_warehouse_movement(
+            self,
+            year: str,
+            sigla: str,
+            serie: str,
+            numero: str,
+            cod_conto: str,
+            properties: Optional[list[str]] = None
+        ) -> Optional[dict[str, str]]:
+        return self._get_resource(year, "documenti/movimenti-magazzino", f"{sigla}+{serie}+{numero}+{cod_conto}", properties)
 
     # Mydb
 
