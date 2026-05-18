@@ -196,6 +196,52 @@ class MexalPZ:
         data = response.json()
         return data["dati"]
 
+    def find_customers(self, properties: list[str] = [], filters: list[tuple[str, str, Any]] = []) -> Optional[list[dict[str, str]]]:
+        base_endpoint = f"{self._BASE_URL}/clienti/ricerca"
+
+        all_customers = []
+        next = None
+
+        filters = {
+            "filtri": [
+                {
+                    "campo": campo,
+                    "condizione": condizione,
+                    "valore": valore
+                } for campo, condizione, valore in filters
+            ]
+        }
+
+        while True:
+            params = {}
+            if properties:
+                params["fields"] = ",".join(properties)
+            if next:
+                params["next"] = next
+
+            response = requests.post(
+                base_endpoint,
+                headers=self._headers,
+                params=params,
+                json=filters,
+                timeout=self._TIMEOUT_SECONDS
+            )
+
+            if response.status_code != 200:
+                self._log_error(f"Error finding customers: {response.status_code} - {response.text}")
+                return None
+
+            data = response.json()
+
+            customers = [{k: str(v) for k, v in d.items()} for d in data.get("dati", [])]
+            all_customers.extend(customers)
+
+            next = data.get("next")
+            if not next:
+                break
+
+        return all_customers
+
     def get_all_customers(self, properties: Optional[list[str]] = None, include_predeleted: bool = False) -> Optional[list[dict[str, str]]]:
         endpoint = self._BASE_URL + "/clienti"
 
