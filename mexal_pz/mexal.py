@@ -186,6 +186,15 @@ class MexalPZ:
         
         data = response.json()
         return data["dati"]
+    
+    def get_all_referees_field(self) -> Optional[list[dict[str, str]]]:
+        response = requests.get(self._BASE_URL + "/referenti/clienti?info=true", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
+        if response.status_code != 200:
+            self._log_error(f"Error fetching referees fields: {response.status_code} - {response.text}")
+            return None
+        
+        data = response.json()
+        return data["dati"]
 
     def get_all_warehouse_movements_field(self) -> Optional[list[dict[str, str]]]:
         response = requests.get(self._BASE_URL + "/documenti/movimenti-magazzino?info=true", headers=self._headers, timeout=self._TIMEOUT_SECONDS)
@@ -241,6 +250,52 @@ class MexalPZ:
                 break
 
         return all_customers
+    
+    def find_referees(self, properties: list[str] = [], filters: list[tuple[str, str, Any]] = []) -> Optional[list[dict[str, str]]]:
+        base_endpoint = f"{self._BASE_URL}/referenti/clienti/ricerca"
+
+        all_referees = []
+        next = None
+
+        filters = {
+            "filtri": [
+                {
+                    "campo": campo,
+                    "condizione": condizione,
+                    "valore": valore
+                } for campo, condizione, valore in filters
+            ]
+        }
+
+        while True:
+            params = {}
+            if properties:
+                params["fields"] = ",".join(properties)
+            if next:
+                params["next"] = next
+
+            response = requests.post(
+                base_endpoint,
+                headers=self._headers,
+                params=params,
+                json=filters,
+                timeout=self._TIMEOUT_SECONDS
+            )
+
+            if response.status_code != 200:
+                self._log_error(f"Error finding referees: {response.status_code} - {response.text}")
+                return None
+
+            data = response.json()
+
+            referees = [{k: str(v) for k, v in d.items()} for d in data.get("dati", [])]
+            all_referees.extend(referees)
+
+            next = data.get("next")
+            if not next:
+                break
+
+        return all_referees
 
     def get_all_customers(self, properties: Optional[list[str]] = None, include_predeleted: bool = False) -> Optional[list[dict[str, str]]]:
         endpoint = self._BASE_URL + "/clienti"
